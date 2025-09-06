@@ -217,40 +217,54 @@
   </div>
 
     <script>
-(() => {
-  // --- CONFIG ---
-  const API = 'https://script.google.com/macros/s/AKfycbwdZpRdCthkYeAuSJ4xD0UKKcl9dLAtb--9CUj7djQOKR4V6Riv5a9DSUsxgW4tZc1Y/exec';
+document.addEventListener('DOMContentLoaded', () => {
+  // ---------- CONFIG ----------
+  const API    = 'https://script.google.com/macros/s/AKfycbwdZpRdCthkYeAuSJ4xD0UKKcl9dLAtb--9CUj7djQOKR4V6Riv5a9DSUsxgW4tZc1Y/exec';
   const SECRET = 'MySecret987654';
 
-  // For GitHub Pages project site:
-  const SW_PATH = '/timetable-talk/service-worker.js';
+  // For GitHub Pages project: /timetable-talk/
+  const SW_PATH  = '/timetable-talk/service-worker.js';
   const SW_SCOPE = '/timetable-talk/';
 
+  // ---------- HELPERS ----------
   const el = id => document.getElementById(id);
-  const heardEl = el('heard');
-  const previewBox = el('previewBox');
-  const btnApply = el('btnApply');
-  const clearWrap = el('clearSourceWrap');
+  const safeEl = id => {
+    const n = el(id);
+    if (!n) log(`(skip) element not found: #${id}`);
+    return n;
+  };
+  const on = (node, ev, fn) => node && node.addEventListener(ev, fn, { passive: true });
 
   function log(msg){
     const L = el('log');
     const ts = new Date().toLocaleString();
-    L.textContent += `\n[${ts}] ${msg}`;
-    L.scrollTop = L.scrollHeight;
+    if (L) {
+      L.textContent += `\n[${ts}] ${msg}`;
+      L.scrollTop = L.scrollHeight;
+    } else {
+      console.log(`[LOG] ${msg}`);
+    }
   }
-  function setStatus(s){ el('status').textContent = s; }
+  function setStatus(s){
+    const S = el('status');
+    if (S) S.textContent = s;
+    else log(`STATUS: ${s}`);
+  }
 
-  // --------- SIMPLE GET (no custom headers) ----------
+  window.addEventListener('error', e => {
+    log(`❌ JS Error: ${e.message}`);
+  });
+
   async function getJSON(paramsObj){
     const q = new URLSearchParams({ secret: SECRET, t: String(Date.now()), ...paramsObj });
     const url = `${API}?${q.toString()}`;
     const res = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' });
     const text = await res.text();
-    let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    let data; try { data = JSON.parse(text); } catch { data = { raw:text }; }
     return { ok: res.ok, status: res.status, data };
   }
 
-  function toISO(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+  function toISO(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`;}
   function tomorrowISO(){ const n=new Date(); n.setDate(n.getDate()+1); return toISO(n); }
 
   function hhmmOrBlank(sISO, eISO){
@@ -268,132 +282,176 @@
     }).join(' • ');
   }
 
+  // ---------- UI NODES (safe) ----------
+  const heardEl     = safeEl('heard');
+  const previewBox  = safeEl('previewBox');
+  const btnApply    = safeEl('btnApply');
+  const clearWrap   = safeEl('clearSourceWrap');
+  const btnClear    = safeEl('btnClear');
+  const btnTodays   = safeEl('btnTodays');
+  const btnPreview  = safeEl('btnPreview');
+  const btnPing     = safeEl('btnPing');
+  const btnPushCal  = safeEl('btnPushCal');
+  const prefSwitch  = safeEl('prefSwitch');
+  const clearChk    = safeEl('clearSourceChk');
+  const advBtn      = safeEl('advBtn');
+  const advMenu     = safeEl('advMenu');
+  const cmdSel      = safeEl('cmdTemplates');
+  const cmdIns      = safeEl('btnInsertTemplate');
+
+  // ---------- FEATURES ----------
   async function showToday(){
     setStatus('Loading…');
-    const {ok,status,data} = await getJSON({ action:'todaysClasses' });
-    if(!ok || !data){ setStatus('Failed'); log(`❌ Today → ${status}`); return; }
-    const classes = Array.isArray(data.classes) ? data.classes : [];
-    let line = 'No classes today';
-    if(classes.length>0){ line = formatItems(classes); }
-    else if(Array.isArray(data.summary) && data.summary.length){
-      const s = data.summary.map(x => x.replace('??:??–??:??','')).join(' • ');
-      line = s || 'No classes today';
+    try{
+      const {ok,status,data} = await getJSON({ action:'todaysClasses' });
+      if(!ok || !data){ setStatus('Failed'); log(`❌ Today → ${status}`); return; }
+      const classes = Array.isArray(data.classes) ? data.classes : [];
+      let line = 'No classes today';
+      if(classes.length>0){ line = formatItems(classes); }
+      else if(Array.isArray(data.summary) && data.summary.length){
+        const s = data.summary.map(x => x.replace('??:??–??:??','')).join(' • ');
+        line = s || 'No classes today';
+      }
+      setStatus(line);
+      log(`✅ Today → ${line}`);
+    }catch(err){
+      setStatus('Failed'); log(`❌ Today → ${err}`);
     }
-    setStatus(line);
-    log(`✅ Today → ${line}`);
   }
 
   async function showPreview(){
     const d = prompt('Preview date (YYYY-MM-DD)', tomorrowISO());
     if(!d) return;
     setStatus(`Previewing ${d}…`);
-    const {ok,status,data} = await getJSON({ action:'previewForDate', date:d });
-    if(!ok || !data){ setStatus('Failed'); log(`❌ Preview(${d}) → ${status}`); return; }
-    const wd = data.weekday || '';
-    const items = Array.isArray(data.items) ? data.items : [];
-    let line = 'No classes (plan)';
-    if(items.length>0){
-      const formatted = items.map(it => {
-        const time = hhmmOrBlank(it.start, it.end);
-        const core = [`Period ${it.period||'?'}`, time].filter(Boolean).join(': ');
-        const title = it.title ? ` (${it.title})` : '';
-        return core + title;
-      }).join(' • ');
-      line = formatted;
-    } else if(Array.isArray(data.summary) && data.summary.length){
-      const s = data.summary.map(x => x.replace('??:??–??:??','')).join(' • ');
-      line = s || 'No classes (plan)';
+    try{
+      const {ok,status,data} = await getJSON({ action:'previewForDate', date:d });
+      if(!ok || !data){ setStatus('Failed'); log(`❌ Preview(${d}) → ${status}`); return; }
+      const wd = data.weekday || '';
+      const items = Array.isArray(data.items) ? data.items : [];
+      let line = 'No classes (plan)';
+      if(items.length>0){
+        const formatted = items.map(it => {
+          const time = hhmmOrBlank(it.start, it.end);
+          const core = [`Period ${it.period||'?'}`, time].filter(Boolean).join(': ');
+          const title = it.title ? ` (${it.title})` : '';
+          return core + title;
+        }).join(' • ');
+        line = formatted;
+      } else if(Array.isArray(data.summary) && data.summary.length){
+        const s = data.summary.map(x => x.replace('??:??–??:??','')).join(' • ');
+        line = s || 'No classes (plan)';
+      }
+      setStatus(`Preview ${d} (${wd}) — ${line}`);
+      log(`✅ Preview(${d}) → ${line}`);
+    }catch(err){
+      setStatus('Failed'); log(`❌ Preview(${d}) → ${err}`);
     }
-    setStatus(`Preview ${d} (${wd}) — ${line}`);
-    log(`✅ Preview(${d}) → ${line}`);
   }
 
   async function ping(){
-    const {ok,status,data} = await getJSON({ action:'ping' });
-    const line = ok ? `🛰️ Ping OK ${data && data.mode ? '('+data.mode+')' : ''}` : 'Ping failed';
-    setStatus(line);
-    log(`${ok?'✅':'❌'} Ping → ${status} ${JSON.stringify(data||{})}`);
+    try{
+      const {ok,status,data} = await getJSON({ action:'ping' });
+      const line = ok ? `🛰️ Ping OK ${data && data.mode ? '('+data.mode+')' : ''}` : 'Ping failed';
+      setStatus(line);
+      log(`${ok?'✅':'❌'} Ping → ${status} ${JSON.stringify(data||{})}`);
+    }catch(err){
+      setStatus('Ping failed');
+      log(`❌ Ping → ${err}`);
+    }
   }
 
   async function pushToday(){
     setStatus('Pushing calendar for today…');
-    const {ok,status,data} = await getJSON({ action:'pushCalendarToday' });
-    const line = ok ? `📅 Calendar updated for ${data && data.date ? data.date : 'today'}` : 'Calendar push failed';
-    setStatus(line);
-    log(`cal push → ${status} ${JSON.stringify(data||{})}`);
+    try{
+      const {ok,status,data} = await getJSON({ action:'pushCalendarToday' });
+      const line = ok ? `📅 Calendar updated for ${data && data.date ? data.date : 'today'}` : 'Calendar push failed';
+      setStatus(line);
+      log(`cal push → ${status} ${JSON.stringify(data||{})}`);
+    }catch(err){
+      setStatus('Calendar push failed');
+      log(`❌ cal push → ${err}`);
+    }
   }
-
-  // Preferences: clear source (move)
-  const PREF_KEY = 'clearSourceDefault';
-  const clearDefault = () => { const v = localStorage.getItem(PREF_KEY); return (v === null) ? true : (v === 'true'); };
-  function setClearDefault(val){ localStorage.setItem(PREF_KEY, String(!!val)); el('clearSourceChk').checked = !!val; setSwitch(!!val ? 'clear' : 'keep'); }
-  function setSwitch(mode){ const sw = el('prefSwitch'); if(mode === 'keep'){ sw.classList.add('on'); sw.setAttribute('aria-checked','true'); } else { sw.classList.remove('on'); sw.setAttribute('aria-checked','false'); } }
-  setClearDefault(clearDefault());
-
-  (function(){
-    const sw = el('prefSwitch');
-    function toggle(){ const nowKeep = !sw.classList.contains('on'); if(nowKeep){ setSwitch('keep'); setClearDefault(false); } else { setSwitch('clear'); setClearDefault(true); } }
-    sw.addEventListener('click', toggle);
-    sw.addEventListener('keydown', e => { if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggle(); } });
-    setSwitch(clearDefault() ? 'clear' : 'keep');
-  })();
-
-  function refreshClearWrap(){
-    const t = (heardEl.value||'').toLowerCase();
-    const looksLikeMove = /\bmove\s+period\b/.test(t);
-    clearWrap.classList.toggle('hidden', !looksLikeMove);
-    if(looksLikeMove){ el('clearSourceChk').checked = clearDefault(); }
-  }
-  heardEl.addEventListener('input', refreshClearWrap);
-  refreshClearWrap();
 
   // Clear button
-  el('btnClear').addEventListener('click', () => {
-    heardEl.value = '';
-    previewBox.style.display = 'none';
-    btnApply.disabled = true;
-    refreshClearWrap();
+  on(btnClear, 'click', () => {
+    if (heardEl) heardEl.value = '';
+    if (previewBox) previewBox.style.display = 'none';
+    if (btnApply) btnApply.disabled = true;
     setStatus('Cleared.');
     log('🧹 Cleared input and preview');
   });
 
-  // Wire buttons
-  el('btnTodays').onclick = showToday;
-  el('btnPreview').onclick = showPreview;
-  el('btnPing').onclick = ping;
-  el('btnPushCal').onclick = pushToday;
+  // Wire buttons (only if they exist)
+  if (btnTodays)  btnTodays.onclick  = showToday;
+  if (btnPreview) btnPreview.onclick = showPreview;
+  if (btnPing)    btnPing.onclick    = ping;
+  if (btnPushCal) btnPushCal.onclick = pushToday;
 
-  // Advanced dropdown
-  (function(){
-    const btn  = document.getElementById('advBtn');
-    const menu = document.getElementById('advMenu');
-    function closeMenu(){ menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
-    function toggleMenu(e){ e.stopPropagation(); const open = menu.classList.toggle('open'); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-    btn.addEventListener('click', toggleMenu);
-    btn.addEventListener('touchstart', toggleMenu, {passive:true});
-    document.addEventListener('click', closeMenu);
-    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeMenu(); });
-    menu.addEventListener('click', closeMenu);
-  })();
+  // Preferences switch (guarded)
+  const PREF_KEY = 'clearSourceDefault';
+  function clearDefault(){
+    const v = localStorage.getItem(PREF_KEY);
+    return (v === null) ? true : (v === 'true');
+  }
+  function setSwitch(mode){
+    if (!prefSwitch) return;
+    if(mode === 'keep'){
+      prefSwitch.classList.add('on');
+      prefSwitch.setAttribute('aria-checked','true');
+    } else {
+      prefSwitch.classList.remove('on');
+      prefSwitch.setAttribute('aria-checked','false');
+    }
+  }
+  function setClearDefault(val){
+    localStorage.setItem(PREF_KEY, String(!!val));
+    if (clearChk) clearChk.checked = !!val;
+    setSwitch(!!val ? 'clear' : 'keep');
+  }
+  setClearDefault(clearDefault());
 
-  // Templates (kept as-is)
-  (function(){
-    const sel = document.getElementById('cmdTemplates');
-    const btn = document.getElementById('btnInsertTemplate');
-    function tomorrowISO(){ const n=new Date(); n.setDate(n.getDate()+1); const y=n.getFullYear(), m=String(n.getMonth()+1).padStart(2,'0'), d=String(n.getDate()).padStart(2,'0'); return `${y}-${m}-${d}`; }
-    function fill(template){ if(!template) return ''; const defaults = {'{p1}':'4','{p2}':'5','{from}':'5','{to}':'4','{p}':'2','{name}':'9B','{day}':'3','{date}': tomorrowISO(),'{start}':'09:00','{end}':'09:40'}; let out = template; Object.keys(defaults).forEach(k => { out = out.replace(k, defaults[k]); }); return out; }
-    btn.addEventListener('click', ()=>{ const val = sel.value || ''; if(!val) return; const cmd = fill(val); heardEl.value = cmd; heardEl.focus(); refreshClearWrap(); if (typeof parsed !== 'undefined') parsed = null; previewBox.style.display='none'; btnApply.disabled=false; });
-  })();
+  if (prefSwitch){
+    const toggle = () => {
+      const nowKeep = !prefSwitch.classList.contains('on');
+      if(nowKeep){ setSwitch('keep'); setClearDefault(false); }
+      else { setSwitch('clear'); setClearDefault(true); }
+    };
+    on(prefSwitch, 'click', toggle);
+    on(prefSwitch, 'keydown', e => { if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggle(); } });
+    setSwitch(clearDefault() ? 'clear' : 'keep');
+  }
+
+  // Command templates (guarded)
+  if (cmdSel && cmdIns && heardEl){
+    function tmrISO(){ const n=new Date(); n.setDate(n.getDate()+1); const y=n.getFullYear(), m=String(n.getMonth()+1).padStart(2,'0'), d=String(n.getDate()).padStart(2,'0'); return `${y}-${m}-${d}`; }
+    function fill(t){
+      if(!t) return '';
+      const dfts = {'{p1}':'4','{p2}':'5','{from}':'5','{to}':'4','{p}':'2','{name}':'9B','{day}':'3','{date}': tmrISO(),'{start}':'09:00','{end}':'09:40'};
+      let out = t;
+      Object.keys(dfts).forEach(k => { out = out.replace(k, dfts[k]); });
+      return out;
+    }
+    on(cmdIns, 'click', () => {
+      const val = cmdSel.value || '';
+      if(!val) return;
+      heardEl.value = fill(val);
+      heardEl.focus();
+    });
+  }
 
   // First load
   showToday();
+  ping();
 
-  // Register Service Worker for GitHub Pages project URL
+  // Service worker (project path)
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register(SW_PATH, { scope: SW_SCOPE })
-      .catch(err => console.warn('SW registration failed:', err));
+      .then(() => log('🔧 Service worker registered'))
+      .catch(err => log('SW registration failed: '+err));
   }
-})();
+});
 </script>
+
 </body>
 </html>
