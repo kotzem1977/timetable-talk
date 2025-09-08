@@ -170,7 +170,12 @@
   <div class="status" id="status">Ready</div>
 </div>
 
-<!-- Collapsible Log (closed by default) -->
+<!-- Status (ALWAYS visible) -->
+<div class="card">
+  <div class="status" id="status">Ready</div>
+</div>
+
+<!-- Log (collapsible) -->
 <div class="card collapsible">
   <div class="collapsible-header" id="logToggle">
     Log
@@ -181,11 +186,10 @@
   </div>
 </div>
 
+<div style="height:12px"></div>
 
-    <div style="height:12px"></div>
-
-    <!-- Voice + confirm panel -->
-    <div class="card">
+<!-- Voice + confirm panel -->
+<div class="card">
       <div class="row">
         <button class="btn" id="micBtn">🎙️ Start</button>
         <select id="langSel" aria-label="Language">
