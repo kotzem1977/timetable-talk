@@ -165,17 +165,22 @@
       </div>
     </div>
 
-    <!-- Collapsible Log / Status (closed by default) -->
-    <div class="card collapsible">
-      <div class="collapsible-header" id="logToggle">
-        Log / Status
-        <span id="logArrow">▼</span>
-      </div>
-      <div class="collapsible-body" id="logBody">
-        <div class="status" id="status">Ready</div>
-        <div class="log" id="log"></div>
-      </div>
-    </div>
+    <!-- Status (ALWAYS visible) -->
+<div class="card">
+  <div class="status" id="status">Ready</div>
+</div>
+
+<!-- Collapsible Log (closed by default) -->
+<div class="card collapsible">
+  <div class="collapsible-header" id="logToggle">
+    Log
+    <span id="logArrow">▼</span>
+  </div>
+  <div class="collapsible-body" id="logBody">
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
 
     <div style="height:12px"></div>
 
