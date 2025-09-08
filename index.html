@@ -498,7 +498,8 @@ document.addEventListener('DOMContentLoaded', () => {
         line = s || 'No classes today';
       }
       setStatus(line);
-      log(`✅ Today → ${line}`);
+      // Optional: keep a short log without the full period text:
+log('✅ Today loaded');
     }catch(err){
       setStatus('Failed'); log(`❌ Today → ${err}`);
     }
