@@ -1,5 +1,5 @@
 // service-worker.js
-const CACHE_NAME = 'timetable-talk-v7';
+const CACHE_NAME = 'timetable-talk-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -28,6 +28,7 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
 
 
 
